@@ -1,0 +1,100 @@
+---
+title: 'Spatial RNA: Day 1'
+author: "Alexis Garretson"
+date: "2024-06-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(hdf5r))
+suppressPackageStartupMessages(library(Seurat))
+
+download.file("https://raw.githubusercontent.com/smcclatchy/spatial-transcriptomics/main/code/spatial_utils.R", destfile = "scripts/spatial_utils.R")
+
+source("scripts/spatial_utils.R")
+```
+
+
+```{r}
+raw_st <- Load10X_Spatial(data.dir      = "data/151673", 
+                          filename      = "151673_raw_feature_bc_matrix.h5",
+                          filter.matrix = FALSE)
+
+filter_st <- Load10X_Spatial(data.dir      = "data/151673", 
+                          filename      = "151673_filtered_feature_bc_matrix.h5",
+                          filter.matrix = FALSE)
+```
+
+```{r}
+tissue_position <- read_csv("data/151673/spatial/tissue_positions_list.csv",
+                            col_names =F) %>% 
+  column_to_rownames("X1")
+
+colnames(tissue_position) <- c("in_tissue", 
+                               "array_row", 
+                               "array_col", 
+                               "pxl_row_in_fullres", 
+                               "pxl_col_in_fullres")
+
+tissue_position <- tissue_position[Cells(raw_st),]
+stopifnot(rownames(tissue_position) == Cells(raw_st))
+
+raw_st    <- AddMetaData(object = raw_st,    metadata = tissue_position)
+filter_st <- AddMetaData(object = filter_st, metadata = tissue_position)
+```
+
+```{r}
+SpatialPlot(raw_st, group.by = "in_tissue", alpha = 0.3)
+```
+```{r}
+raw_st@meta.data %>%
+  ggplot(aes(as.logical(in_tissue), nCount_Spatial)) +
+    geom_boxplot() +
+    labs(title = 'UMI Counts in Tissue and Background',
+         x     = 'In Tissue?',
+         y     = 'Counts') +
+  ggpubr::stat_compare_means()
+```
+```{r}
+plot1 <- SpatialDimPlot(filter_st, alpha = c(0, 0)) + 
+           NoLegend()
+plot2 <- SpatialDimPlot(filter_st) + 
+           NoLegend()
+plot1 | plot2
+```
+
+
+```{r}
+plot1 <- SpatialDimPlot(filter_st, alpha = c(0, 0)) + 
+           NoLegend()
+plot2 <- SpatialFeaturePlot(filter_st, features = "nCount_Spatial")
+plot1 | plot2
+plot1
+plot2
+```
+
+```{r}
+plot1 <- SpatialDimPlot(filter_st, alpha = c(0, 0)) + 
+           NoLegend()
+plot2 <- SpatialFeaturePlot(filter_st, features = "nFeature_Spatial")
+plot1 | plot2
+```
+
+```{r}
+ggplot(tissue_position, aes(y=-array_row, x=array_col, color=in_tissue)) +
+  geom_point()
+```
+
+
+```{r}
+paste(nrow(filter_st), "genes.")
+counts     <- LayerData(filter_st, 'counts')
+gene_sums  <- rowSums(counts)
+keep_genes <- which(gene_sums > 0)
+
+filter_st  <- filter_st[keep_genes,]
+```
+
